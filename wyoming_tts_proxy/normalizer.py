@@ -59,7 +59,10 @@ class TextNormalizer:
             processed_text = emoji.replace_emoji(processed_text, replace="")
 
         # 6. Character limiting
-        if self.config.max_text_length > 0 and len(processed_text) > self.config.max_text_length:
+        if (
+            self.config.max_text_length > 0
+            and len(processed_text) > self.config.max_text_length
+        ):
             _LOGGER.info(f"Truncating text to {self.config.max_text_length} characters")
             processed_text = processed_text[: self.config.max_text_length]
 
@@ -70,7 +73,9 @@ class TextNormalizer:
             # Still strip, but don't collapse all to one line if not requested
             processed_text = processed_text.strip()
 
-        _LOGGER.debug(f"Original text: '{text[:50]}...' -> Normalized: '{processed_text[:50]}...'")
+        _LOGGER.debug(
+            f"Original text: '{text[:50]}...' -> Normalized: '{processed_text[:50]}...'"
+        )
         return processed_text
 
 

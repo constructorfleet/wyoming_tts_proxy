@@ -8,6 +8,10 @@ Many times, LLMs will include emoji or markdown in their response. This proxy al
 
 - **Markdown Normalization**: Automatically removes common markdown markers (bold, italic, headers, links, backticks).
 - **Emoji Removal**: Strips all emoji characters from the text.
+- **URL Removal**: Strip `http://` and `https://` links to prevent TTS from reading out long URLs.
+- **Code Block Cleaning**: Remove triple-backtick code blocks (` ``` `).
+- **Whitespace Collapsing**: Collapse multiple spaces and newlines into a single space for smoother TTS flow.
+- **Character Limiting**: Truncate long responses to a maximum length to prevent runaway TTS.
 - **Custom Regex Replacements**: Define your own search and replace patterns.
 - **Development Tools**: Built-in scripts for linting, formatting, and high test coverage.
 
@@ -17,10 +21,14 @@ You can provide a YAML configuration file using the `--config` CLI argument. The
 
 ```yaml
 # Example config.yaml
-normalize_markdown: true  # Remove markdown formatting
-remove_emoji: true        # Remove all emojis
-remove_asterisks: true    # Remove asterisks (default)
-replacements:            # Custom regex replacements
+normalize_markdown: true   # Remove markdown formatting
+remove_emoji: true         # Remove all emojis
+remove_asterisks: true     # Remove asterisks (default)
+remove_urls: true          # Strip http/https links
+collapse_whitespace: true  # (default: true) Smooth pauses
+remove_code_blocks: true   # Strip ``` blocks
+max_text_length: 500       # Truncate to 500 chars (0 = disable)
+replacements:              # Custom regex replacements
   - regex: "LLM"
     replace: "Large Language Model"
   - regex: "\\d+"

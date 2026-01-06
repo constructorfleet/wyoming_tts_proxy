@@ -106,13 +106,14 @@ def test_collapse_whitespace():
     # By default it's false now (actually I should check what the default in config is)
     config = ProxyConfig(collapse_whitespace=True)
     normalizer = TextNormalizer(config=config)
-    assert normalizer.normalize("Line 1\n\nLine 2    with spaces") == "Line 1 Line 2 with spaces"
+    assert (
+        normalizer.normalize("Line 1\n\nLine 2    with spaces")
+        == "Line 1 Line 2 with spaces"
+    )
 
     config_no_collapse = ProxyConfig(collapse_whitespace=False)
     normalizer_no_collapse = TextNormalizer(config=config_no_collapse)
-    assert (
-        normalizer_no_collapse.normalize("Line 1\n\nLine 2") == "Line 1\n\nLine 2"
-    )
+    assert normalizer_no_collapse.normalize("Line 1\n\nLine 2") == "Line 1\n\nLine 2"
 
 
 def test_remove_code_blocks():
