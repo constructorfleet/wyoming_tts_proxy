@@ -39,3 +39,26 @@ def test_cache_miss(tmp_path):
     cache_dir = tmp_path / "cache"
     cache = AudioCache(str(cache_dir), enabled=True)
     assert cache.get("nonexistent", None) is None
+
+
+def test_cache_pruning(tmp_path):
+    cache_dir = tmp_path / "cache"
+    # Set limit to a very small value (1 byte)
+    cache = AudioCache(str(cache_dir), max_size_mb=0, enabled=True)
+
+    from wyoming.audio import AudioStop
+
+    # First event - should be pruned immediately because limit is 0
+    cache.set("first", None, [AudioStop().event()])
+    assert not (cache_dir / f"{cache.get_hash('first', None)}.events").exists()
+
+    # Now test with a limit that allows one file
+    cache.max_size_mb = 1 
+    cache.set("second", None, [AudioStop().event()])
+    assert (cache_dir / f"{cache.get_hash('second', None)}.events").exists()
+
+    # Set limit to 0 and another write should prune the second one
+    cache.max_size_mb = 0
+    cache.set("third", None, [AudioStop().event()])
+    assert not (cache_dir / f"{cache.get_hash('second', None)}.events").exists()
+    assert not (cache_dir / f"{cache.get_hash('third', None)}.events").exists()

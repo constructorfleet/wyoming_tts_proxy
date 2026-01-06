@@ -4,8 +4,10 @@ import asyncio
 import logging
 import sys
 import yaml
+import json
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Any
 from functools import partial
 from argparse import ArgumentParser
 
@@ -27,6 +29,21 @@ PROXY_ATTRIBUTION_NAME = "My TTS Proxy"
 PROXY_ATTRIBUTION_URL = "https://github.com/mitrokun/wyoming_tts_proxy"
 
 _LOGGER = logging.getLogger(__name__)
+
+
+class JsonFormatter(logging.Formatter):
+    def format(self, record: logging.LogRecord) -> str:
+        log_obj = {
+            "timestamp": datetime.fromtimestamp(record.created, tz=timezone.utc).isoformat(),
+            "level": record.levelname,
+            "logger": record.name,
+            "message": record.getMessage(),
+            "module": record.module,
+            "func": record.funcName,
+        }
+        if record.exc_info:
+            log_obj["exception"] = self.formatException(record.exc_info)
+        return json.dumps(log_obj)
 
 
 def load_config(config_path_str: Optional[str]) -> ProxyConfig:
@@ -76,10 +93,22 @@ async def main() -> None:
         help="Directory to store cached audio (env: CACHE_DIR)",
     )
     parser.add_argument(
+        "--max-cache-size-mb",
+        type=int,
+        default=int(os.getenv("MAX_CACHE_SIZE_MB", "512")),
+        help="Maximum cache size in megabytes (env: MAX_CACHE_SIZE_MB, default: 512)",
+    )
+    parser.add_argument(
         "--metrics-port",
         type=int,
         default=int(os.getenv("METRICS_PORT", "0")),
         help="Port to expose Prometheus metrics (0 = disabled) (env: METRICS_PORT)",
+    )
+    parser.add_argument(
+        "--structured-logging",
+        action="store_true",
+        default=os.getenv("STRUCTURED_LOGGING", "false").lower() == "true",
+        help="Use JSON structured logging (env: STRUCTURED_LOGGING)",
     )
     parser.add_argument(
         "--log-level",
@@ -96,12 +125,24 @@ async def main() -> None:
     )
     args = parser.parse_args()
 
+    config = load_config(args.config)
+
+    # Use CLI arg first, then config, then env was handled by parser default
+    use_structured = args.structured_logging or config.structured_logging
+
+    log_handler = logging.StreamHandler()
+    if use_structured:
+        log_handler.setFormatter(JsonFormatter())
+    else:
+        log_handler.setFormatter(
+            logging.Formatter("%(asctime)s %(levelname)s %(name)s %(module)s: %(message)s")
+        )
+
     logging.basicConfig(
         level=args.log_level.upper(),
-        format="%(asctime)s %(levelname)s %(name)s %(module)s: %(message)s",
+        handlers=[log_handler],
+        force=True,
     )
-
-    config = load_config(args.config)
 
     # Merge CLI args with config
     upstream_uris = args.upstream_tts_uri or []
@@ -123,7 +164,12 @@ async def main() -> None:
 
     # Cache
     cache_dir = args.cache_dir or config.cache_dir
-    cache = AudioCache(cache_dir=cache_dir, enabled=config.cache_enabled)
+    max_cache_size = args.max_cache_size_mb or config.max_cache_size_mb
+    cache = AudioCache(
+        cache_dir=cache_dir,
+        max_size_mb=max_cache_size,
+        enabled=config.cache_enabled,
+    )
 
     _LOGGER.info(f"Starting {PROXY_PROGRAM_NAME} v{PROXY_PROGRAM_VERSION}")
     _LOGGER.info(f"Proxy will listen on: {args.uri}")

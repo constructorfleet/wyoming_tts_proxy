@@ -1,7 +1,21 @@
 import logging
-from prometheus_client import Counter, Histogram, start_http_server
+import threading
+from http.server import HTTPServer
+from prometheus_client import Counter, Histogram, MetricsHandler
 
 _LOGGER = logging.getLogger(__name__)
+
+
+class MetricsAndHealthHandler(MetricsHandler):
+    def do_GET(self):
+        if self.path == "/health":
+            self.send_response(200)
+            self.send_header("Content-type", "text/plain")
+            self.end_headers()
+            self.wfile.write(b"OK")
+        else:
+            super().do_GET()
+
 
 # Metrics
 REQUESTS_TOTAL = Counter(
@@ -21,7 +35,17 @@ TTS_LATENCY = Histogram(
 def start_metrics_server(port: int) -> None:
     if port > 0:
         try:
-            start_http_server(port)
-            _LOGGER.info(f"Prometheus metrics server started on port {port}")
+
+            def run_server():
+                httpd = HTTPServer(("0.0.0.0", port), MetricsAndHealthHandler)
+                httpd.serve_forever()
+
+            thread = threading.Thread(target=run_server, daemon=True)
+            thread.start()
+            _LOGGER.info(
+                f"Prometheus metrics and health server started on port {port} (/metrics, /health)"
+            )
         except Exception as e:
-            _LOGGER.error(f"Failed to start Prometheus metrics server on port {port}: {e}")
+            _LOGGER.error(
+                f"Failed to start Prometheus metrics and health server on port {port}: {e}"
+            )

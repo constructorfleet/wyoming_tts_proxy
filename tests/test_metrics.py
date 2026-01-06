@@ -16,3 +16,17 @@ def test_metrics_increment():
     REQUESTS_TOTAL.inc()
     after = REQUESTS_TOTAL._value.get()
     assert after == before + 1
+
+
+def test_health_endpoint():
+    import time
+    import urllib.request
+    from wyoming_tts_proxy.metrics import start_metrics_server
+
+    port = 9999
+    start_metrics_server(port)
+    time.sleep(0.5)  # Wait for server to start
+
+    response = urllib.request.urlopen(f"http://127.0.0.1:{port}/health")
+    assert response.getcode() == 200
+    assert response.read() == b"OK"
