@@ -7,12 +7,11 @@ import yaml
 import json
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional, Any
+from typing import Optional
 from functools import partial
 from argparse import ArgumentParser
 
 from wyoming.server import AsyncServer
-from wyoming.client import AsyncClient
 # from wyoming.event import Event
 
 from .handler import TTSProxyEventHandler

@@ -1,10 +1,6 @@
-import pytest
 from prometheus_client import REGISTRY
 from wyoming_tts_proxy.metrics import (
     REQUESTS_TOTAL,
-    CACHE_HITS_TOTAL,
-    UPSTREAM_FAILURES_TOTAL,
-    TTS_LATENCY,
 )
 
 

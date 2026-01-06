@@ -1,6 +1,5 @@
 import json
 import logging
-from io import StringIO
 from wyoming_tts_proxy.__main__ import JsonFormatter
 
 

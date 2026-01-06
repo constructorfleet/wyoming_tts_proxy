@@ -1,4 +1,3 @@
-import pytest
 from wyoming.audio import AudioStart, AudioStop
 from wyoming_tts_proxy.cache import AudioCache
 
