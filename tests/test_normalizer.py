@@ -91,3 +91,44 @@ def test_empty_string_input():
 def test_whitespace_only_input():
     normalizer = TextNormalizer()
     assert normalizer.normalize("   \n\t   ") == ""
+
+
+def test_remove_urls():
+    config = ProxyConfig(remove_urls=True)
+    normalizer = TextNormalizer(config=config)
+    assert (
+        normalizer.normalize("Check this out: https://example.com/test?a=1")
+        == "Check this out:"
+    )
+
+
+def test_collapse_whitespace():
+    # By default it's false now (actually I should check what the default in config is)
+    config = ProxyConfig(collapse_whitespace=True)
+    normalizer = TextNormalizer(config=config)
+    assert normalizer.normalize("Line 1\n\nLine 2    with spaces") == "Line 1 Line 2 with spaces"
+
+    config_no_collapse = ProxyConfig(collapse_whitespace=False)
+    normalizer_no_collapse = TextNormalizer(config=config_no_collapse)
+    assert (
+        normalizer_no_collapse.normalize("Line 1\n\nLine 2") == "Line 1\n\nLine 2"
+    )
+
+
+def test_remove_code_blocks():
+    config = ProxyConfig(remove_code_blocks=True, collapse_whitespace=False)
+    normalizer = TextNormalizer(config=config)
+    text = "Here is some code:\n```python\nprint('hello')\n```\nAnd more text."
+    assert normalizer.normalize(text) == "Here is some code:\n\nAnd more text."
+
+
+def test_max_text_length():
+    config = ProxyConfig(max_text_length=10)
+    normalizer = TextNormalizer(config=config)
+    assert normalizer.normalize("This is too long") == "This is to"
+
+
+def test_multiple_newlines_stipping():
+    # Even without collapse_whitespace, we call strip()
+    normalizer = TextNormalizer()
+    assert normalizer.normalize("\n\nHello\n\n") == "Hello"

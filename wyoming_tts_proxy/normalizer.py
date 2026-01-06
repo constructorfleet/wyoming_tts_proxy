@@ -19,7 +19,11 @@ class TextNormalizer:
 
         processed_text = text
 
-        # 1. Regex replacements from config
+        # 1. Triple-backtick code blocks
+        if self.config.remove_code_blocks:
+            processed_text = re.sub(r"```.*?```", "", processed_text, flags=re.DOTALL)
+
+        # 2. Regex replacements from config
         for replacement in self.config.replacements:
             pattern = replacement.regex
             repl = replacement.replace
@@ -29,7 +33,12 @@ class TextNormalizer:
                 except re.error as e:
                     _LOGGER.error(f"Invalid regex pattern '{pattern}': {e}")
 
-        # 2. Markdown normalization
+        # 3. URL removal
+        if self.config.remove_urls:
+            # Simple URL regex
+            processed_text = re.sub(r"https?://\S+", "", processed_text)
+
+        # 4. Markdown normalization
         if self.config.normalize_markdown:
             # Simple markdown removal
             # Remove bold/italic markers
@@ -45,14 +54,23 @@ class TextNormalizer:
             # Default behavior if not markdown normalized: just remove asterisks as before
             processed_text = processed_text.replace("*", "")
 
-        # 3. Emoji removal
+        # 5. Emoji removal
         if self.config.remove_emoji:
             processed_text = emoji.replace_emoji(processed_text, replace="")
 
-        # Clean up whitespace
-        processed_text = re.sub(r"\s+", " ", processed_text).strip()
+        # 6. Character limiting
+        if self.config.max_text_length > 0 and len(processed_text) > self.config.max_text_length:
+            _LOGGER.info(f"Truncating text to {self.config.max_text_length} characters")
+            processed_text = processed_text[: self.config.max_text_length]
 
-        _LOGGER.debug(f"Original text: '{text}' -> Normalized: '{processed_text}'")
+        # 7. Clean up whitespace
+        if self.config.collapse_whitespace:
+            processed_text = re.sub(r"\s+", " ", processed_text).strip()
+        else:
+            # Still strip, but don't collapse all to one line if not requested
+            processed_text = processed_text.strip()
+
+        _LOGGER.debug(f"Original text: '{text[:50]}...' -> Normalized: '{processed_text[:50]}...'")
         return processed_text
 
 
