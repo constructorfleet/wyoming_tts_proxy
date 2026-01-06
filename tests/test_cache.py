@@ -53,7 +53,7 @@ def test_cache_pruning(tmp_path):
     assert not (cache_dir / f"{cache.get_hash('first', None)}.events").exists()
 
     # Now test with a limit that allows one file
-    cache.max_size_mb = 1 
+    cache.max_size_mb = 1
     cache.set("second", None, [AudioStop().event()])
     assert (cache_dir / f"{cache.get_hash('second', None)}.events").exists()
 

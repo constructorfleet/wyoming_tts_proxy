@@ -65,7 +65,9 @@ class AudioCache:
 
     def _get_cache_size(self) -> int:
         """Return total size of cache in bytes."""
-        return sum(f.stat().st_size for f in self.cache_dir.glob("*.events") if f.is_file())
+        return sum(
+            f.stat().st_size for f in self.cache_dir.glob("*.events") if f.is_file()
+        )
 
     def _prune_cache(self) -> None:
         """Remove oldest cache files if total size exceeds limit."""

@@ -44,9 +44,7 @@ class ProxyConfig(BaseModel):
     cache_dir: str = Field(
         default="/tmp/wyoming_tts_cache", description="Cache directory"
     )
-    max_cache_size_mb: int = Field(
-        default=512, description="Maximum cache size in MB"
-    )
+    max_cache_size_mb: int = Field(default=512, description="Maximum cache size in MB")
     metrics_port: int = Field(
         default=0, description="Prometheus metrics port (0 = disabled)"
     )

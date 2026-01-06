@@ -25,10 +25,13 @@ CACHE_HITS_TOTAL = Counter(
     "tts_proxy_cache_hits_total", "Total number of audio cache hits"
 )
 UPSTREAM_FAILURES_TOTAL = Counter(
-    "tts_proxy_upstream_failures_total", "Total number of failures to upstream TTS services", ["uri"]
+    "tts_proxy_upstream_failures_total",
+    "Total number of failures to upstream TTS services",
+    ["uri"],
 )
 TTS_LATENCY = Histogram(
-    "tts_proxy_latency_seconds", "Latency of TTS generation (from request to first audio chunk)"
+    "tts_proxy_latency_seconds",
+    "Latency of TTS generation (from request to first audio chunk)",
 )
 
 
