@@ -2,8 +2,7 @@ import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from wyoming.event import Event
-from wyoming.info import Describe, Info, TtsProgram
+from wyoming.info import Describe, Info, TtsProgram, Attribution
 from wyoming.tts import Synthesize
 from wyoming.audio import AudioStart, AudioStop
 
@@ -55,7 +54,7 @@ async def test_handler_describe(
             TtsProgram(
                 name="upstream-tts",
                 description="desc",
-                attribution={"name": "attr", "url": "url"},
+                attribution=Attribution(name="attr", url="url"),
                 installed=True,
                 version="1.0",
                 voices=[],
