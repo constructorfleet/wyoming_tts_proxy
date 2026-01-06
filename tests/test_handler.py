@@ -305,3 +305,50 @@ async def test_handler_synthesize_empty(proxy_program_info, text_normalizer):
     assert result is True
     assert not upstream_tts_client_factory.called
     assert writer.write.called  # Should have sent AudioStart and AudioStop
+
+
+@pytest.mark.asyncio
+async def test_handler_unhandled_event(proxy_program_info, text_normalizer):
+    reader = AsyncMock(spec=asyncio.StreamReader)
+    writer = AsyncMock(spec=asyncio.StreamWriter)
+
+    handler = TTSProxyEventHandler(
+        reader,
+        writer,
+        proxy_program_info=proxy_program_info,
+        cli_args=MagicMock(),
+        upstream_tts_uri_for_logging="tcp://upstream",
+        upstream_tts_client_factory=MagicMock(),
+        text_normalizer=text_normalizer,
+    )
+
+    event = Event(type="unknown", data={})
+    result = await handler.handle_event(event)
+
+    assert result is True
+
+
+@pytest.mark.asyncio
+async def test_handler_describe_generic_error(proxy_program_info, text_normalizer):
+    reader = AsyncMock(spec=asyncio.StreamReader)
+    writer = AsyncMock(spec=asyncio.StreamWriter)
+
+    upstream_client = AsyncMock()
+    upstream_client.__aenter__.side_effect = Exception("Generic error")
+
+    upstream_tts_client_factory = MagicMock(return_value=upstream_client)
+
+    handler = TTSProxyEventHandler(
+        reader,
+        writer,
+        proxy_program_info=proxy_program_info,
+        cli_args=MagicMock(),
+        upstream_tts_uri_for_logging="tcp://upstream",
+        upstream_tts_client_factory=upstream_tts_client_factory,
+        text_normalizer=text_normalizer,
+    )
+
+    event = Describe().event()
+    result = await handler.handle_event(event)
+
+    assert result is True

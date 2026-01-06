@@ -1,0 +1,17 @@
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+.pytest_cache/
+.coverage
+htmlcov/
+tests/
+scripts/
+.git/
+.github/
+.vscode/
+README.md
+pyproject.toml
+uv.lock
+Dockerfile
+.dockerignore

@@ -25,13 +25,19 @@ class TTSProxyEventHandler(AsyncEventHandler):
 
         super().__init__(reader, writer, **kwargs)
 
+        try:
+            self.client_address = writer.get_extra_info("peername")
+        except Exception:
+            self.client_address = "unknown"
+
         _LOGGER.info(
-            f"TTSProxyEventHandler initialized. Upstream TTS for logging: {self.upstream_tts_uri_for_logging}"
+            f"TTSProxyEventHandler initialized for client {self.client_address}. Upstream TTS: {self.upstream_tts_uri_for_logging}"
         )
 
     async def handle_event(self, event: Event) -> bool:
+        _LOGGER.debug(f"Received event from client {self.client_address}: {event.type}")
         if Describe.is_type(event.type):
-            _LOGGER.debug("Received Describe event from client.")
+            _LOGGER.debug(f"Handling Describe event from client {self.client_address}.")
             try:
                 async with self.upstream_tts_client_factory() as upstream_client:
                     _LOGGER.debug(

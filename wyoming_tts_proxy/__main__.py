@@ -56,11 +56,6 @@ def create_upstream_tts_client(uri: str) -> AsyncClient:
 
 
 async def main() -> None:
-    logging.basicConfig(
-        level=os.getenv("LOGLEVEL", "INFO").upper(),
-        format="%(asctime)s %(levelname)s %(name)s %(module)s: %(message)s",
-    )
-
     parser = ArgumentParser(description=PROXY_PROGRAM_DESCRIPTION)
     parser.add_argument(
         "--uri",
@@ -70,14 +65,32 @@ async def main() -> None:
     parser.add_argument(
         "--upstream-tts-uri",
         default=os.getenv("UPSTREAM_TTS_URI"),
-        help="unix:// or tcp:// URI of the upstream Wyoming TTS service (env: UPSTREAM_TTS_URI)",
+        help="unix:// or tcp:// URI of the Wyoming TTS service to proxy (env: UPSTREAM_TTS_URI)",
     )
     parser.add_argument(
         "--config",
         default=os.getenv("CONFIG_FILE_PATH"),
         help="Path to YAML configuration file for text normalization (env: CONFIG_FILE_PATH)",
     )
+    parser.add_argument(
+        "--log-level",
+        default=os.getenv("LOG_LEVEL", "INFO"),
+        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+        help="Logging level (env: LOG_LEVEL, default: INFO)",
+    )
+    parser.add_argument(
+        "--debug",
+        action="store_const",
+        const="DEBUG",
+        dest="log_level",
+        help="Set log level to DEBUG",
+    )
     args = parser.parse_args()
+
+    logging.basicConfig(
+        level=args.log_level.upper(),
+        format="%(asctime)s %(levelname)s %(name)s %(module)s: %(message)s",
+    )
 
     if not args.upstream_tts_uri:
         print(

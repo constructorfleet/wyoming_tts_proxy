@@ -37,18 +37,56 @@ You can run the proxy using CLI arguments or environment variables.
 python3 -m wyoming_tts_proxy \
   --uri tcp://0.0.0.0:10201 \
   --upstream-tts-uri tcp://127.0.0.1:10200 \
-  --config config.yaml
+  --config config.yaml \
+  --log-level DEBUG
 ```
+
+- `--uri`: URI where this proxy server will listen (default: `tcp://0.0.0.0:10201`)
+- `--upstream-tts-uri`: URI of the upstream Wyoming TTS service
+- `--config`: Path to YAML configuration file
+- `--log-level`: Logging level (`DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`; default: `INFO`)
+- `--debug`: Shortcut for `--log-level DEBUG`
 
 #### Environment Variables
 
 - `LISTEN_URI`: URI where this proxy server will listen (default: `tcp://0.0.0.0:10201`)
 - `UPSTREAM_TTS_URI`: URI of the upstream Wyoming TTS service (**required**)
 - `CONFIG_FILE_PATH`: Path to the YAML configuration file
+- `LOG_LEVEL`: Logging level (default: `INFO`)
 
 Example:
 ```bash
 UPSTREAM_TTS_URI=tcp://127.0.0.1:10200 python3 -m wyoming_tts_proxy
+```
+
+### Docker
+
+You can also run the proxy using Docker.
+
+#### Build the image
+
+```bash
+docker build -t wyoming-tts-proxy .
+```
+
+#### Run the container
+
+```bash
+docker run -it --rm \
+  -p 10201:10201 \
+  -e UPSTREAM_TTS_URI=tcp://192.168.1.100:10200 \
+  wyoming-tts-proxy
+```
+
+If you need to provide a custom configuration file:
+
+```bash
+docker run -it --rm \
+  -p 10201:10201 \
+  -e UPSTREAM_TTS_URI=tcp://192.168.1.100:10200 \
+  -e CONFIG_FILE_PATH=/config/config.yaml \
+  -v $(pwd)/config.yaml:/config/config.yaml \
+  wyoming-tts-proxy
 ```
 
 If you change the TTS engine, you might need to reload the Home Assistant integration to update the data.
