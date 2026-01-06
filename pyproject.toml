@@ -1,0 +1,18 @@
+[project]
+name = "wyoming-tts-proxy"
+version = "0.1.0"
+description = "Transparently normalize text and proxy requests to text-to-speech Wyoming services."
+readme = "README.md"
+requires-python = ">=3.13.1"
+dependencies = [
+    "emoji>=2.15.0",
+    "pydantic>=2.12.5",
+    "pyyaml>=6.0.3",
+    "wyoming>=1.8.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+    "ruff>=0.14.10",
+]
