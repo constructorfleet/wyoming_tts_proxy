@@ -10,6 +10,9 @@ class ReplacementConfig(BaseModel):
 
 
 class ProxyConfig(BaseModel):
+    upstream_uris: List[str] = Field(
+        default_factory=list, description="List of upstream Wyoming TTS service URIs"
+    )
     normalize_markdown: bool = Field(
         default=False, description="Whether to remove markdown formatting"
     )
@@ -32,6 +35,17 @@ class ProxyConfig(BaseModel):
     max_text_length: int = Field(
         default=0,
         description="Maximum number of characters to send to TTS (0 = unlimited)",
+    )
+    ssml_template: str = Field(
+        default="",
+        description="Optional SSML template. Use {{text}} as placeholder. E.g. '<speak>{{text}}</speak>'",
+    )
+    cache_enabled: bool = Field(default=False, description="Enable audio caching")
+    cache_dir: str = Field(
+        default="/tmp/wyoming_tts_cache", description="Cache directory"
+    )
+    metrics_port: int = Field(
+        default=0, description="Prometheus metrics port (0 = disabled)"
     )
     replacements: List[ReplacementConfig] = Field(
         default_factory=list, description="List of custom regex replacements"

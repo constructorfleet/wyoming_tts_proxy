@@ -16,6 +16,8 @@ from wyoming.client import AsyncClient
 from .handler import TTSProxyEventHandler
 from .normalizer import TextNormalizer
 from .config import ProxyConfig
+from .cache import AudioCache
+from .metrics import start_metrics_server
 
 
 PROXY_PROGRAM_NAME = "tts-proxy"
@@ -51,10 +53,6 @@ def load_config(config_path_str: Optional[str]) -> ProxyConfig:
         sys.exit(1)
 
 
-def create_upstream_tts_client(uri: str) -> AsyncClient:
-    return AsyncClient.from_uri(uri)
-
-
 async def main() -> None:
     parser = ArgumentParser(description=PROXY_PROGRAM_DESCRIPTION)
     parser.add_argument(
@@ -64,13 +62,24 @@ async def main() -> None:
     )
     parser.add_argument(
         "--upstream-tts-uri",
-        default=os.getenv("UPSTREAM_TTS_URI"),
-        help="unix:// or tcp:// URI of the Wyoming TTS service to proxy (env: UPSTREAM_TTS_URI)",
+        action="append",
+        help="unix:// or tcp:// URI of the Wyoming TTS service to proxy. Can be specified multiple times for failover. (env: UPSTREAM_TTS_URI)",
     )
     parser.add_argument(
         "--config",
         default=os.getenv("CONFIG_FILE_PATH"),
         help="Path to YAML configuration file for text normalization (env: CONFIG_FILE_PATH)",
+    )
+    parser.add_argument(
+        "--cache-dir",
+        default=os.getenv("CACHE_DIR", "/tmp/wyoming_tts_cache"),
+        help="Directory to store cached audio (env: CACHE_DIR)",
+    )
+    parser.add_argument(
+        "--metrics-port",
+        type=int,
+        default=int(os.getenv("METRICS_PORT", "0")),
+        help="Port to expose Prometheus metrics (0 = disabled) (env: METRICS_PORT)",
     )
     parser.add_argument(
         "--log-level",
@@ -92,17 +101,34 @@ async def main() -> None:
         format="%(asctime)s %(levelname)s %(name)s %(module)s: %(message)s",
     )
 
-    if not args.upstream_tts_uri:
-        print(
-            "An upstream TTS URI is required (--upstream-tts-uri or UPSTREAM_TTS_URI env)"
+    config = load_config(args.config)
+
+    # Merge CLI args with config
+    upstream_uris = args.upstream_tts_uri or []
+    if not upstream_uris and os.getenv("UPSTREAM_TTS_URI"):
+        upstream_uris = [os.getenv("UPSTREAM_TTS_URI")]
+
+    if not upstream_uris:
+        upstream_uris = config.upstream_uris
+
+    if not upstream_uris:
+        _LOGGER.error(
+            "An upstream TTS URI is required (--upstream-tts-uri, UPSTREAM_TTS_URI env, or config file)"
         )
         sys.exit(1)
 
+    # Metrics
+    metrics_port = args.metrics_port or config.metrics_port
+    start_metrics_server(metrics_port)
+
+    # Cache
+    cache_dir = args.cache_dir or config.cache_dir
+    cache = AudioCache(cache_dir=cache_dir, enabled=config.cache_enabled)
+
     _LOGGER.info(f"Starting {PROXY_PROGRAM_NAME} v{PROXY_PROGRAM_VERSION}")
     _LOGGER.info(f"Proxy will listen on: {args.uri}")
-    _LOGGER.info(f"Upstream TTS service: {args.upstream_tts_uri}")
+    _LOGGER.info(f"Upstream TTS services: {upstream_uris}")
 
-    config = load_config(args.config)
     text_normalizer = TextNormalizer(config=config)
 
     proxy_program_basic_info = {
@@ -113,17 +139,14 @@ async def main() -> None:
         "attribution_url": PROXY_ATTRIBUTION_URL,
     }
 
-    upstream_tts_client_factory = partial(
-        create_upstream_tts_client, args.upstream_tts_uri
-    )
-
     handler_factory = partial(
         TTSProxyEventHandler,
         proxy_program_info=proxy_program_basic_info,
         cli_args=args,
-        upstream_tts_uri_for_logging=args.upstream_tts_uri,
-        upstream_tts_client_factory=upstream_tts_client_factory,
+        upstream_uris=upstream_uris,
         text_normalizer=text_normalizer,
+        cache=cache,
+        config=config,
     )
 
     server = AsyncServer.from_uri(args.uri)

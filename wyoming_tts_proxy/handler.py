@@ -1,6 +1,6 @@
-# --- START OF FILE handler.py ---
 import logging
 import asyncio
+import time
 
 from wyoming.audio import AudioChunk, AudioStart, AudioStop
 from wyoming.event import Event
@@ -8,6 +8,14 @@ from wyoming.error import Error
 from wyoming.info import Describe, Info, TtsProgram, Attribution
 from wyoming.tts import Synthesize
 from wyoming.server import AsyncEventHandler
+from wyoming.client import AsyncClient
+
+from .metrics import (
+    REQUESTS_TOTAL,
+    CACHE_HITS_TOTAL,
+    UPSTREAM_FAILURES_TOTAL,
+    TTS_LATENCY,
+)
 
 
 _LOGGER = logging.getLogger(__name__)
@@ -19,9 +27,10 @@ class TTSProxyEventHandler(AsyncEventHandler):
     ) -> None:
         self.proxy_program_info = kwargs.pop("proxy_program_info")
         self.cli_args = kwargs.pop("cli_args")
-        self.upstream_tts_uri_for_logging = kwargs.pop("upstream_tts_uri_for_logging")
-        self.upstream_tts_client_factory = kwargs.pop("upstream_tts_client_factory")
+        self.upstream_uris = kwargs.pop("upstream_uris")
         self.text_normalizer = kwargs.pop("text_normalizer")
+        self.cache = kwargs.pop("cache")
+        self.config = kwargs.pop("config")
 
         super().__init__(reader, writer, **kwargs)
 
@@ -31,54 +40,50 @@ class TTSProxyEventHandler(AsyncEventHandler):
             self.client_address = "unknown"
 
         _LOGGER.info(
-            f"TTSProxyEventHandler initialized for client {self.client_address}. Upstream TTS: {self.upstream_tts_uri_for_logging}"
+            f"TTSProxyEventHandler initialized for client {self.client_address}. "
+            f"Upstreams: {self.upstream_uris}"
         )
 
     async def handle_event(self, event: Event) -> bool:
         _LOGGER.debug(f"Received event from client {self.client_address}: {event.type}")
         if Describe.is_type(event.type):
-            _LOGGER.debug(f"Handling Describe event from client {self.client_address}.")
+            return await self._handle_describe(event)
+
+        if Synthesize.is_type(event.type):
+            return await self._handle_synthesize(event)
+
+        _LOGGER.warning(
+            f"Received unhandled event type: {event.type}. Keeping connection open."
+        )
+        return True
+
+    async def _handle_describe(self, event: Event) -> bool:
+        _LOGGER.debug(f"Handling Describe event from client {self.client_address}.")
+        for uri in self.upstream_uris:
             try:
-                async with self.upstream_tts_client_factory() as upstream_client:
-                    _LOGGER.debug(
-                        f"Sending Describe to upstream TTS: {self.upstream_tts_uri_for_logging}"
-                    )
+                async with AsyncClient.from_uri(uri) as upstream_client:
+                    _LOGGER.debug(f"Sending Describe to upstream TTS: {uri}")
                     await upstream_client.write_event(Describe().event())
 
                     upstream_response = await upstream_client.read_event()
                     if upstream_response and Info.is_type(upstream_response.type):
                         upstream_info = Info.from_event(upstream_response)
-                        # ИСПРАВЛЕНО ЗДЕСЬ: используем .event().payload для логирования
                         _LOGGER.debug(
-                            f"Received Info from upstream TTS ({self.upstream_tts_uri_for_logging}): {upstream_info.event().payload}"
+                            f"Received Info from upstream TTS ({uri}): {upstream_info.event().payload}"
                         )
 
                         modified_tts_programs = []
                         if upstream_info.tts:
                             for prog in upstream_info.tts:
-                                copied_voices = []
-                                if prog.voices:
-                                    for voice in prog.voices:
-                                        copied_voices.append(voice)
-
                                 new_prog = TtsProgram(
                                     name=f"{prog.name} (via {self.proxy_program_info['name']})",
                                     description=prog.description,
                                     attribution=prog.attribution,
                                     installed=prog.installed,
                                     version=prog.version,
-                                    voices=copied_voices,
+                                    voices=prog.voices or [],
                                 )
                                 modified_tts_programs.append(new_prog)
-
-                        if not modified_tts_programs and upstream_info.tts is not None:
-                            _LOGGER.warning(
-                                f"Upstream TTS ({self.upstream_tts_uri_for_logging}) provided TTS programs, but the list was empty or became empty."
-                            )
-                        elif upstream_info.tts is None:
-                            _LOGGER.warning(
-                                f"Upstream TTS ({self.upstream_tts_uri_for_logging}) did not provide any TTS programs (tts field was null)."
-                            )
 
                         final_info = Info(
                             asr=upstream_info.asr,
@@ -94,159 +99,107 @@ class TTSProxyEventHandler(AsyncEventHandler):
                         _LOGGER.debug(
                             f"Sent modified Info to client: {final_info.event().payload}"
                         )
-                    else:
-                        _LOGGER.warning(
-                            f"No Info event received from upstream TTS ({self.upstream_tts_uri_for_logging}) or unexpected event. Sending basic proxy info."
-                        )
-                        basic_proxy_info_event = Info(
-                            tts=[
-                                TtsProgram(
-                                    name=self.proxy_program_info["name"],
-                                    description=self.proxy_program_info["description"],
-                                    attribution=Attribution(
-                                        name=self.proxy_program_info[
-                                            "attribution_name"
-                                        ],
-                                        url=self.proxy_program_info["attribution_url"],
-                                    ),
-                                    installed=True,
-                                    version=self.proxy_program_info["version"],
-                                    voices=[],
-                                )
-                            ]
-                        ).event()
-                        await self.write_event(basic_proxy_info_event)
-                        _LOGGER.debug(
-                            f"Sent basic proxy info as fallback: {basic_proxy_info_event.payload}"
-                        )
-
-            except ConnectionRefusedError:
-                _LOGGER.error(
-                    f"Connection refused by upstream TTS ({self.upstream_tts_uri_for_logging}) for Describe."
-                )
-                await self.write_event(
-                    Error(
-                        text="Upstream TTS service is unavailable for Describe."
-                    ).event()
-                )
-            except asyncio.TimeoutError:
-                _LOGGER.error(
-                    f"Timeout connecting to upstream TTS ({self.upstream_tts_uri_for_logging}) for Describe."
-                )
-                await self.write_event(
-                    Error(text="Upstream TTS service timed out for Describe.").event()
-                )
+                        return True
             except Exception as e:
-                _LOGGER.error(
-                    f"Error during Describe processing with upstream ({self.upstream_tts_uri_for_logging}): {e}",
-                    exc_info=True,
+                _LOGGER.warning(f"Failed to get Describe from upstream {uri}: {e}")
+                UPSTREAM_FAILURES_TOTAL.labels(uri=uri).inc()
+
+        # Fallback if all upstreams fail
+        _LOGGER.warning("All upstreams failed for Describe. Sending basic proxy info.")
+        basic_proxy_info_event = Info(
+            tts=[
+                TtsProgram(
+                    name=self.proxy_program_info["name"],
+                    description=self.proxy_program_info["description"],
+                    attribution=Attribution(
+                        name=self.proxy_program_info["attribution_name"],
+                        url=self.proxy_program_info["attribution_url"],
+                    ),
+                    installed=True,
+                    version=self.proxy_program_info["version"],
+                    voices=[],
                 )
-                await self.write_event(
-                    Error(text="Error getting info from upstream TTS.").event()
-                )
+            ]
+        ).event()
+        await self.write_event(basic_proxy_info_event)
+        return True
+
+    async def _handle_synthesize(self, event: Event) -> bool:
+        REQUESTS_TOTAL.inc()
+        synthesize_event = Synthesize.from_event(event)
+        original_text = synthesize_event.text
+
+        normalized_text = self.text_normalizer.normalize(original_text)
+        _LOGGER.info(
+            f"Text for TTS (original): '{original_text[:50]}...' -> (normalized): '{normalized_text[:50]}...' Voice: {synthesize_event.voice}"
+        )
+
+        if not normalized_text:
+            await self._send_empty_audio()
             return True
 
-        if Synthesize.is_type(event.type):
-            synthesize_event = Synthesize.from_event(event)
-            original_text = synthesize_event.text
+        # Check Cache
+        cached_events = self.cache.get(normalized_text, synthesize_event.voice)
+        if cached_events:
+            CACHE_HITS_TOTAL.inc()
+            for ev in cached_events:
+                await self.write_event(ev)
+            return True
 
-            normalized_text = self.text_normalizer.normalize(original_text)
-            _LOGGER.info(
-                f"Text for TTS (original): '{original_text[:50]}...' -> (normalized): '{normalized_text[:50]}...' Voice: {synthesize_event.voice}"
-            )
+        # Wrap in SSML if configured
+        final_text = normalized_text
+        if self.config.ssml_template:
+            final_text = self.config.ssml_template.replace("{{text}}", normalized_text)
+            _LOGGER.debug(f"SSML wrapped text: {final_text}")
 
-            if not normalized_text:
-                _LOGGER.warning("Text became empty after normalization.")
-                sample_rate = 16000
-                sample_width = 2
-                channels = 1
-                await self.write_event(
-                    AudioStart(
-                        rate=sample_rate, width=sample_width, channels=channels
-                    ).event()
-                )
-                await self.write_event(AudioStop().event())
-                _LOGGER.debug("Sent empty audio stream for empty normalized text.")
-                return True
+        # Try upstreams with failover
+        start_time = time.perf_counter()
+        first_chunk_sent = False
 
-            proxied_synthesize_data = {"text": normalized_text}
-            if synthesize_event.voice:
-                proxied_synthesize_data["voice"] = synthesize_event.voice
-
-            proxied_synthesize_event = Synthesize(**proxied_synthesize_data).event()
-            _LOGGER.debug(
-                f"Sending Synthesize to upstream ({self.upstream_tts_uri_for_logging}): {proxied_synthesize_event.payload}"
-            )
-
+        for uri in self.upstream_uris:
             try:
-                async with self.upstream_tts_client_factory() as upstream_client:
-                    _LOGGER.debug(
-                        f"Connected to upstream TTS ({self.upstream_tts_uri_for_logging}). Sending Synthesize event."
-                    )
-                    await upstream_client.write_event(proxied_synthesize_event)
+                events_to_cache = []
+                async with AsyncClient.from_uri(uri) as upstream_client:
+                    proxied_synthesize = Synthesize(
+                        text=final_text, voice=synthesize_event.voice
+                    ).event()
+                    await upstream_client.write_event(proxied_synthesize)
 
                     while True:
                         upstream_event = await upstream_client.read_event()
                         if upstream_event is None:
-                            _LOGGER.warning(
-                                f"Upstream TTS ({self.upstream_tts_uri_for_logging}) connection closed or no more events."
-                            )
                             break
-                        _LOGGER.debug(
-                            f"Received event from upstream TTS ({self.upstream_tts_uri_for_logging}): {upstream_event.type}"
-                        )
-                        if (
-                            AudioStart.is_type(upstream_event.type)
-                            or AudioChunk.is_type(upstream_event.type)
-                            or AudioStop.is_type(upstream_event.type)
-                            or Error.is_type(upstream_event.type)
+
+                        events_to_cache.append(upstream_event)
+                        await self.write_event(upstream_event)
+
+                        if not first_chunk_sent and AudioChunk.is_type(
+                            upstream_event.type
                         ):
-                            await self.write_event(upstream_event)
-                        else:
-                            _LOGGER.warning(
-                                f"Received unexpected event type '{upstream_event.type}' from upstream TTS ({self.upstream_tts_uri_for_logging}). Ignoring."
-                            )
+                            TTS_LATENCY.observe(time.perf_counter() - start_time)
+                            first_chunk_sent = True
+
                         if AudioStop.is_type(upstream_event.type) or Error.is_type(
                             upstream_event.type
                         ):
-                            _LOGGER.debug(
-                                f"AudioStop or Error received from upstream ({self.upstream_tts_uri_for_logging}). Ending stream."
-                            )
                             break
-                    _LOGGER.info(
-                        f"Finished streaming audio from upstream TTS ({self.upstream_tts_uri_for_logging})."
-                    )
-                _LOGGER.info("Finished processing Synthesize request.")
-            except ConnectionRefusedError:
-                _LOGGER.error(
-                    f"Connection refused by upstream TTS server ({self.upstream_tts_uri_for_logging}) for Synthesize"
-                )
-                await self.write_event(
-                    Error(text="Upstream TTS service is unavailable.").event()
-                )
-            except asyncio.TimeoutError:
-                _LOGGER.error(
-                    f"Timeout connecting to upstream TTS server ({self.upstream_tts_uri_for_logging}) for Synthesize"
-                )
-                await self.write_event(
-                    Error(text="Upstream TTS service timed out.").event()
-                )
-            except Exception as e:
-                _LOGGER.error(
-                    f"Error during communication with upstream TTS ({self.upstream_tts_uri_for_logging}): {e}",
-                    exc_info=True,
-                )
-                await self.write_event(
-                    Error(
-                        text="An error occurred while communicating with the upstream TTS service."
-                    ).event()
-                )
-            return True
 
-        _LOGGER.warning(
-            f"Received unhandled event type: {event.type}. Keeping connection open."
-        )
+                    self.cache.set(
+                        normalized_text, synthesize_event.voice, events_to_cache
+                    )
+                    return True
+            except Exception as e:
+                _LOGGER.warning(f"Upstream {uri} failed for Synthesize: {e}")
+                UPSTREAM_FAILURES_TOTAL.labels(uri=uri).inc()
+
+        _LOGGER.error("All upstreams failed for Synthesize.")
+        await self.write_event(Error(text="All upstream TTS services failed.").event())
         return True
+
+    async def _send_empty_audio(self):
+        _LOGGER.warning("Text became empty after normalization.")
+        await self.write_event(AudioStart(rate=16000, width=2, channels=1).event())
+        await self.write_event(AudioStop().event())
 
 
 # --- END OF FILE handler.py ---
