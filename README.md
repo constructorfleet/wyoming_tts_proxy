@@ -9,6 +9,7 @@ Many times, LLMs will include emoji or markdown in their response. This proxy al
 - **Markdown Normalization**: Automatically removes common markdown markers (bold, italic, headers, links, backticks).
 - **Emoji Removal**: Strips all emoji characters from the text.
 - **Custom Regex Replacements**: Define your own search and replace patterns.
+- **Development Tools**: Built-in scripts for linting, formatting, and high test coverage.
 
 ### Configuration
 
@@ -18,6 +19,7 @@ You can provide a YAML configuration file using the `--config` CLI argument. The
 # Example config.yaml
 normalize_markdown: true  # Remove markdown formatting
 remove_emoji: true        # Remove all emojis
+remove_asterisks: true    # Remove asterisks (default)
 replacements:            # Custom regex replacements
   - regex: "LLM"
     replace: "Large Language Model"
@@ -35,6 +37,23 @@ python3 -m wyoming_tts_proxy \
 ```
 
 If you change the TTS engine, you might need to reload the Home Assistant integration to update the data.
+
+### Development
+
+This project uses `uv` for dependency management.
+
+```bash
+# Register venv and install dependencies
+uv sync
+
+# Run the master check (format, lint, and test with coverage)
+./scripts/check
+
+# Individual scripts
+./scripts/format  # Reformat code with ruff
+./scripts/lint    # Check linting with ruff
+./scripts/test    # Run tests and report coverage (requires 85%+)
+```
 
 All text manipulations are performed in [wyoming_tts_proxy/normalizer.py](wyoming_tts_proxy/normalizer.py).
 

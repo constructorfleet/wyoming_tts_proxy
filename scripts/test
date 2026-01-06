@@ -1,4 +1,4 @@
 #!/usr/bin/env bash
 set -e
 cd "$(dirname "$0")/.."
-PYTHONPATH=. uv run pytest
+PYTHONPATH=. uv run pytest --cov=wyoming_tts_proxy --cov-report=term-missing --cov-fail-under=85

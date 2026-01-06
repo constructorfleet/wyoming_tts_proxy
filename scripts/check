@@ -9,4 +9,4 @@ echo "Running lint check..."
 uv run ruff check .
 
 echo "Running tests..."
-PYTHONPATH=. uv run pytest
+./scripts/test
