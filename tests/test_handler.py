@@ -98,6 +98,115 @@ async def test_handler_describe_error(proxy_program_info, text_normalizer):
     assert result is True
     # Should have sent Error event
     # We can check writer.write calls to see what was sent
+
+
+@pytest.mark.asyncio
+async def test_handler_describe_info_fallback(proxy_program_info, text_normalizer):
+    reader = AsyncMock(spec=asyncio.StreamReader)
+    writer = AsyncMock(spec=asyncio.StreamWriter)
+
+    upstream_client = AsyncMock()
+    upstream_client.__aenter__.return_value = upstream_client
+    # Return non-Info event
+    upstream_client.read_event.return_value = Event(type="not-info", data={})
+
+    upstream_tts_client_factory = MagicMock(return_value=upstream_client)
+
+    handler = TTSProxyEventHandler(
+        reader,
+        writer,
+        proxy_program_info=proxy_program_info,
+        cli_args=MagicMock(),
+        upstream_tts_uri_for_logging="tcp://upstream",
+        upstream_tts_client_factory=upstream_tts_client_factory,
+        text_normalizer=text_normalizer,
+    )
+
+    event = Describe().event()
+    result = await handler.handle_event(event)
+
+    assert result is True
+    assert writer.write.called
+
+
+@pytest.mark.asyncio
+async def test_handler_describe_timeout(proxy_program_info, text_normalizer):
+    reader = AsyncMock(spec=asyncio.StreamReader)
+    writer = AsyncMock(spec=asyncio.StreamWriter)
+
+    upstream_client = AsyncMock()
+    upstream_client.__aenter__.side_effect = asyncio.TimeoutError()
+
+    upstream_tts_client_factory = MagicMock(return_value=upstream_client)
+
+    handler = TTSProxyEventHandler(
+        reader,
+        writer,
+        proxy_program_info=proxy_program_info,
+        cli_args=MagicMock(),
+        upstream_tts_uri_for_logging="tcp://upstream",
+        upstream_tts_client_factory=upstream_tts_client_factory,
+        text_normalizer=text_normalizer,
+    )
+
+    event = Describe().event()
+    result = await handler.handle_event(event)
+
+    assert result is True
+
+
+@pytest.mark.asyncio
+async def test_handler_synthesize_timeout(proxy_program_info, text_normalizer):
+    reader = AsyncMock(spec=asyncio.StreamReader)
+    writer = AsyncMock(spec=asyncio.StreamWriter)
+
+    upstream_client = AsyncMock()
+    upstream_client.__aenter__.side_effect = asyncio.TimeoutError()
+
+    upstream_tts_client_factory = MagicMock(return_value=upstream_client)
+
+    handler = TTSProxyEventHandler(
+        reader,
+        writer,
+        proxy_program_info=proxy_program_info,
+        cli_args=MagicMock(),
+        upstream_tts_uri_for_logging="tcp://upstream",
+        upstream_tts_client_factory=upstream_tts_client_factory,
+        text_normalizer=text_normalizer,
+    )
+
+    event = Synthesize(text="hello").event()
+    result = await handler.handle_event(event)
+
+    assert result is True
+
+
+@pytest.mark.asyncio
+async def test_handler_synthesize_connection_refused(
+    proxy_program_info, text_normalizer
+):
+    reader = AsyncMock(spec=asyncio.StreamReader)
+    writer = AsyncMock(spec=asyncio.StreamWriter)
+
+    upstream_client = AsyncMock()
+    upstream_client.__aenter__.side_effect = ConnectionRefusedError()
+
+    upstream_tts_client_factory = MagicMock(return_value=upstream_client)
+
+    handler = TTSProxyEventHandler(
+        reader,
+        writer,
+        proxy_program_info=proxy_program_info,
+        cli_args=MagicMock(),
+        upstream_tts_uri_for_logging="tcp://upstream",
+        upstream_tts_client_factory=upstream_tts_client_factory,
+        text_normalizer=text_normalizer,
+    )
+
+    event = Synthesize(text="hello").event()
+    result = await handler.handle_event(event)
+
+    assert result is True
     # writer.write.call_args_list contains the events
     pass
 

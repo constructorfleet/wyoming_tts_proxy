@@ -29,11 +29,26 @@ replacements:            # Custom regex replacements
 
 ### Run
 
+You can run the proxy using CLI arguments or environment variables.
+
+#### CLI Arguments
+
 ```bash
 python3 -m wyoming_tts_proxy \
   --uri tcp://0.0.0.0:10201 \
   --upstream-tts-uri tcp://127.0.0.1:10200 \
   --config config.yaml
+```
+
+#### Environment Variables
+
+- `LISTEN_URI`: URI where this proxy server will listen (default: `tcp://0.0.0.0:10201`)
+- `UPSTREAM_TTS_URI`: URI of the upstream Wyoming TTS service (**required**)
+- `CONFIG_FILE_PATH`: Path to the YAML configuration file
+
+Example:
+```bash
+UPSTREAM_TTS_URI=tcp://127.0.0.1:10200 python3 -m wyoming_tts_proxy
 ```
 
 If you change the TTS engine, you might need to reload the Home Assistant integration to update the data.

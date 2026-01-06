@@ -59,6 +59,12 @@ def test_regex_replacements():
     )
 
 
+def test_normalize_empty_text():
+    normalizer = TextNormalizer()
+    assert normalizer.normalize("") == ""
+    assert normalizer.normalize(None) == ""
+
+
 def test_combined_normalization():
     config = ProxyConfig(
         normalize_markdown=True,

@@ -64,18 +64,26 @@ async def main() -> None:
     parser = ArgumentParser(description=PROXY_PROGRAM_DESCRIPTION)
     parser.add_argument(
         "--uri",
-        default="tcp://0.0.0.0:10201",
-        help="unix:// or tcp:// URI where this proxy server will listen",
+        default=os.getenv("LISTEN_URI", "tcp://0.0.0.0:10201"),
+        help="unix:// or tcp:// URI where this proxy server will listen (env: LISTEN_URI)",
     )
     parser.add_argument(
         "--upstream-tts-uri",
-        required=True,
-        help="unix:// or tcp:// URI of the upstream Wyoming TTS service (e.g., your Vosk TTS)",
+        default=os.getenv("UPSTREAM_TTS_URI"),
+        help="unix:// or tcp:// URI of the upstream Wyoming TTS service (env: UPSTREAM_TTS_URI)",
     )
     parser.add_argument(
-        "--config", help="Path to YAML configuration file for text normalization"
+        "--config",
+        default=os.getenv("CONFIG_FILE_PATH"),
+        help="Path to YAML configuration file for text normalization (env: CONFIG_FILE_PATH)",
     )
     args = parser.parse_args()
+
+    if not args.upstream_tts_uri:
+        print(
+            "An upstream TTS URI is required (--upstream-tts-uri or UPSTREAM_TTS_URI env)"
+        )
+        sys.exit(1)
 
     _LOGGER.info(f"Starting {PROXY_PROGRAM_NAME} v{PROXY_PROGRAM_VERSION}")
     _LOGGER.info(f"Proxy will listen on: {args.uri}")
