@@ -6,6 +6,10 @@ Many times, LLMs will include emoji or markdown in their response. This proxy al
 
 ### Features
 
+- **Upstream Failover**: Support multiple upstream TTS servers for high availability.
+- **Audio Caching**: Disk-based caching of synthesized audio to reduce upstream load and latency.
+- **Prometheus Metrics**: Built-in exporter for requests, cache hits, failures, and latency.
+- **SSML Support**: Wrap normalized text in an SSML template before sending to upstream.
 - **Markdown Normalization**: Automatically removes common markdown markers (bold, italic, headers, links, backticks).
 - **Emoji Removal**: Strips all emoji characters from the text.
 - **URL Removal**: Strip `http://` and `https://` links to prevent TTS from reading out long URLs.
@@ -28,11 +32,19 @@ remove_urls: true          # Strip http/https links
 collapse_whitespace: true  # (default: true) Smooth pauses
 remove_code_blocks: true   # Strip ``` blocks
 max_text_length: 500       # Truncate to 500 chars (0 = disable)
+replace_newlines: " "      # Replace newlines (default: " ")
+
+# Advanced Features
+upstream_uris:             # Multiple upstreams for failover
+  - tcp://127.0.0.1:10200
+  - tcp://127.0.0.1:10201
+cache_enabled: true        # Enable disk caching
+cache_dir: /tmp/tts_cache  # Directory for cached audio
+ssml_template: "<speak>{{text}}</speak>" # Wrap text in SSML
+
 replacements:              # Custom regex replacements
   - regex: "LLM"
     replace: "Large Language Model"
-  - regex: "\\d+"
-    replace: "NUMBER"
 ```
 
 ### Run
@@ -45,12 +57,20 @@ You can run the proxy using CLI arguments or environment variables.
 python3 -m wyoming_tts_proxy \
   --uri tcp://0.0.0.0:10201 \
   --upstream-tts-uri tcp://127.0.0.1:10200 \
+  --upstream-tts-uri tcp://127.0.0.1:10201 \
+  --cache-dir ./cache \
+  --metrics-port 8000 \
+  --ssml-template "<speak>{{text}}</speak>" \
   --config config.yaml \
   --log-level DEBUG
 ```
 
 - `--uri`: URI where this proxy server will listen (default: `tcp://0.0.0.0:10201`)
-- `--upstream-tts-uri`: URI of the upstream Wyoming TTS service
+- `--upstream-tts-uri`: URI of the upstream Wyoming TTS service (can be specified multiple times for failover)
+- `--cache-dir`: Directory to store synthesized audio files
+- `--disable-cache`: Disable audio caching
+- `--metrics-port`: Port to export Prometheus metrics (0 = disabled)
+- `--ssml-template`: Template to wrap normalized text in before synthesis
 - `--config`: Path to YAML configuration file
 - `--log-level`: Logging level (`DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`; default: `INFO`)
 - `--debug`: Shortcut for `--log-level DEBUG`
@@ -58,7 +78,11 @@ python3 -m wyoming_tts_proxy \
 #### Environment Variables
 
 - `LISTEN_URI`: URI where this proxy server will listen (default: `tcp://0.0.0.0:10201`)
-- `UPSTREAM_TTS_URI`: URI of the upstream Wyoming TTS service (**required**)
+- `UPSTREAM_TTS_URI`: URI(s) of the upstream Wyoming TTS service (comma-separated; **required**)
+- `CACHE_ENABLED`: Set to `false` to disable caching
+- `CACHE_DIR`: Directory for audio cache
+- `METRICS_PORT`: Port for Prometheus metrics
+- `SSML_TEMPLATE`: Template for SSML wrapping
 - `CONFIG_FILE_PATH`: Path to the YAML configuration file
 - `LOG_LEVEL`: Logging level (default: `INFO`)
 
