@@ -11,7 +11,5 @@ scripts/
 .github/
 .vscode/
 README.md
-pyproject.toml
-uv.lock
 Dockerfile
 .dockerignore
