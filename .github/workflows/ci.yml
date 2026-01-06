@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Run checks (lint, format)
+        run: |
+          ./scripts/lint
+          ./scripts/format --check
+
+      - name: Run tests with coverage
+        run: ./scripts/test
+
+      - name: Pytest coverage comment
+        uses: MishaKav/pytest-coverage-commentary@v1.1.60
+        with:
+          pytest-xml-coverage-path: ./coverage.xml
+          title: Coverage Report
+          badge-title: Coverage
+          hide-badge: false
+          hide-report: false
+          create-new-comment: false
+          junitxml-path: ./pytest.xml
