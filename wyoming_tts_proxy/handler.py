@@ -263,7 +263,12 @@ class TTSProxyEventHandler(AsyncEventHandler):
             return True
 
         synthesize_chunk = SynthesizeChunk.from_event(event)
-        _LOGGER.debug(f"Received text chunk: '{synthesize_chunk.text[:50]}...'")
+        chunk_preview = (
+            synthesize_chunk.text[:50] + "..."
+            if len(synthesize_chunk.text) > 50
+            else synthesize_chunk.text
+        )
+        _LOGGER.debug(f"Received text chunk: '{chunk_preview}'")
 
         # Accumulate text chunks
         self.streaming_text_chunks.append(synthesize_chunk.text)
@@ -282,8 +287,16 @@ class TTSProxyEventHandler(AsyncEventHandler):
         original_text = "".join(self.streaming_text_chunks)
         normalized_text = self.text_normalizer.normalize(original_text)
 
+        original_preview = (
+            original_text[:50] + "..." if len(original_text) > 50 else original_text
+        )
+        normalized_preview = (
+            normalized_text[:50] + "..."
+            if len(normalized_text) > 50
+            else normalized_text
+        )
         _LOGGER.info(
-            f"Streaming text (original): '{original_text[:50]}...' -> (normalized): '{normalized_text[:50]}...' Voice: {self.streaming_voice}"
+            f"Streaming text (original): '{original_preview}' -> (normalized): '{normalized_preview}' Voice: {self.streaming_voice}"
         )
 
         # Reset streaming state
@@ -303,8 +316,6 @@ class TTSProxyEventHandler(AsyncEventHandler):
             CACHE_HITS_TOTAL.inc()
             for ev in cached_events:
                 await self.write_event(ev)
-            # Send SynthesizeStopped to signal end of streaming response
-            await self.write_event(SynthesizeStopped().event())
             return True
 
         # Wrap in SSML if configured
@@ -359,6 +370,7 @@ class TTSProxyEventHandler(AsyncEventHandler):
 
         _LOGGER.error("All upstreams failed for streaming Synthesize.")
         await self.write_event(Error(text="All upstream TTS services failed.").event())
+        # Send SynthesizeStopped to properly close the streaming session
         await self.write_event(SynthesizeStopped().event())
         return True
 
