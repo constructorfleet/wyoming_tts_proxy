@@ -6,7 +6,13 @@ from wyoming.audio import AudioChunk, AudioStart, AudioStop
 from wyoming.event import Event
 from wyoming.error import Error
 from wyoming.info import Describe, Info, TtsProgram, Attribution
-from wyoming.tts import Synthesize
+from wyoming.tts import (
+    Synthesize,
+    SynthesizeStart,
+    SynthesizeChunk,
+    SynthesizeStop,
+    SynthesizeStopped,
+)
 from wyoming.server import AsyncEventHandler
 from wyoming.client import AsyncClient
 
@@ -39,6 +45,12 @@ class TTSProxyEventHandler(AsyncEventHandler):
         except Exception:
             self.client_address = "unknown"
 
+        # Track streaming state
+        self.is_streaming = False
+        self.streaming_voice = None
+        self.streaming_context = None
+        self.streaming_text_chunks = []
+
         _LOGGER.info(
             f"TTSProxyEventHandler initialized for client {self.client_address}. "
             f"Upstreams: {self.upstream_uris}"
@@ -51,6 +63,15 @@ class TTSProxyEventHandler(AsyncEventHandler):
 
         if Synthesize.is_type(event.type):
             return await self._handle_synthesize(event)
+
+        if SynthesizeStart.is_type(event.type):
+            return await self._handle_synthesize_start(event)
+
+        if SynthesizeChunk.is_type(event.type):
+            return await self._handle_synthesize_chunk(event)
+
+        if SynthesizeStop.is_type(event.type):
+            return await self._handle_synthesize_stop(event)
 
         _LOGGER.warning(
             f"Received unhandled event type: {event.type}. Keeping connection open."
@@ -82,6 +103,7 @@ class TTSProxyEventHandler(AsyncEventHandler):
                                     installed=prog.installed,
                                     version=prog.version,
                                     voices=prog.voices or [],
+                                    supports_synthesize_streaming=prog.supports_synthesize_streaming,
                                 )
                                 modified_tts_programs.append(new_prog)
 
@@ -152,6 +174,11 @@ class TTSProxyEventHandler(AsyncEventHandler):
             final_text = self.config.ssml_template.replace("{{text}}", normalized_text)
             _LOGGER.debug(f"SSML wrapped text: {final_text}")
 
+        # Check if we should force streaming (from --stream-tts flag or config)
+        force_streaming = (
+            getattr(self.cli_args, "stream_tts", False) or self.config.stream_tts
+        )
+
         # Try upstreams with failover
         start_time = time.perf_counter()
         first_chunk_sent = False
@@ -160,10 +187,21 @@ class TTSProxyEventHandler(AsyncEventHandler):
             try:
                 events_to_cache = []
                 async with AsyncClient.from_uri(uri) as upstream_client:
-                    proxied_synthesize = Synthesize(
-                        text=final_text, voice=synthesize_event.voice
-                    ).event()
-                    await upstream_client.write_event(proxied_synthesize)
+                    # Send as streaming if forced, otherwise send as regular synthesize
+                    if force_streaming:
+                        _LOGGER.debug(f"Forcing streaming mode to upstream {uri}")
+                        await upstream_client.write_event(
+                            SynthesizeStart(voice=synthesize_event.voice).event()
+                        )
+                        await upstream_client.write_event(
+                            SynthesizeChunk(text=final_text).event()
+                        )
+                        await upstream_client.write_event(SynthesizeStop().event())
+                    else:
+                        proxied_synthesize = Synthesize(
+                            text=final_text, voice=synthesize_event.voice
+                        ).event()
+                        await upstream_client.write_event(proxied_synthesize)
 
                     while True:
                         upstream_event = await upstream_client.read_event()
@@ -179,8 +217,10 @@ class TTSProxyEventHandler(AsyncEventHandler):
                             TTS_LATENCY.observe(time.perf_counter() - start_time)
                             first_chunk_sent = True
 
-                        if AudioStop.is_type(upstream_event.type) or Error.is_type(
-                            upstream_event.type
+                        if (
+                            AudioStop.is_type(upstream_event.type)
+                            or Error.is_type(upstream_event.type)
+                            or SynthesizeStopped.is_type(upstream_event.type)
                         ):
                             break
 
@@ -200,6 +240,127 @@ class TTSProxyEventHandler(AsyncEventHandler):
         _LOGGER.warning("Text became empty after normalization.")
         await self.write_event(AudioStart(rate=16000, width=2, channels=1).event())
         await self.write_event(AudioStop().event())
+
+    async def _handle_synthesize_start(self, event: Event) -> bool:
+        """Handle start of streaming synthesize request."""
+        REQUESTS_TOTAL.inc()
+        synthesize_start = SynthesizeStart.from_event(event)
+
+        _LOGGER.info(f"Starting streaming synthesis from client {self.client_address}")
+
+        # Initialize streaming state
+        self.is_streaming = True
+        self.streaming_voice = synthesize_start.voice
+        self.streaming_context = synthesize_start.context
+        self.streaming_text_chunks = []
+
+        return True
+
+    async def _handle_synthesize_chunk(self, event: Event) -> bool:
+        """Handle chunk of streaming synthesize request."""
+        if not self.is_streaming:
+            _LOGGER.warning("Received SynthesizeChunk without SynthesizeStart")
+            return True
+
+        synthesize_chunk = SynthesizeChunk.from_event(event)
+        _LOGGER.debug(f"Received text chunk: '{synthesize_chunk.text[:50]}...'")
+
+        # Accumulate text chunks
+        self.streaming_text_chunks.append(synthesize_chunk.text)
+
+        return True
+
+    async def _handle_synthesize_stop(self, event: Event) -> bool:
+        """Handle end of streaming synthesize request."""
+        if not self.is_streaming:
+            _LOGGER.warning("Received SynthesizeStop without SynthesizeStart")
+            return True
+
+        _LOGGER.info("Streaming synthesis complete, processing accumulated text")
+
+        # Combine all text chunks
+        original_text = "".join(self.streaming_text_chunks)
+        normalized_text = self.text_normalizer.normalize(original_text)
+
+        _LOGGER.info(
+            f"Streaming text (original): '{original_text[:50]}...' -> (normalized): '{normalized_text[:50]}...' Voice: {self.streaming_voice}"
+        )
+
+        # Reset streaming state
+        self.is_streaming = False
+        voice = self.streaming_voice
+        self.streaming_voice = None
+        self.streaming_context = None
+        self.streaming_text_chunks = []
+
+        if not normalized_text:
+            await self._send_empty_audio()
+            return True
+
+        # Check Cache
+        cached_events = self.cache.get(normalized_text, voice)
+        if cached_events:
+            CACHE_HITS_TOTAL.inc()
+            for ev in cached_events:
+                await self.write_event(ev)
+            # Send SynthesizeStopped to signal end of streaming response
+            await self.write_event(SynthesizeStopped().event())
+            return True
+
+        # Wrap in SSML if configured
+        final_text = normalized_text
+        if self.config.ssml_template:
+            final_text = self.config.ssml_template.replace("{{text}}", normalized_text)
+            _LOGGER.debug(f"SSML wrapped text: {final_text}")
+
+        # Try upstreams with failover - using streaming synthesis
+        start_time = time.perf_counter()
+        first_chunk_sent = False
+
+        for uri in self.upstream_uris:
+            try:
+                events_to_cache = []
+                async with AsyncClient.from_uri(uri) as upstream_client:
+                    # Send as streaming to upstream
+                    await upstream_client.write_event(
+                        SynthesizeStart(voice=voice).event()
+                    )
+                    await upstream_client.write_event(
+                        SynthesizeChunk(text=final_text).event()
+                    )
+                    await upstream_client.write_event(SynthesizeStop().event())
+
+                    while True:
+                        upstream_event = await upstream_client.read_event()
+                        if upstream_event is None:
+                            break
+
+                        events_to_cache.append(upstream_event)
+                        await self.write_event(upstream_event)
+
+                        if not first_chunk_sent and AudioChunk.is_type(
+                            upstream_event.type
+                        ):
+                            TTS_LATENCY.observe(time.perf_counter() - start_time)
+                            first_chunk_sent = True
+
+                        if (
+                            AudioStop.is_type(upstream_event.type)
+                            or Error.is_type(upstream_event.type)
+                            or SynthesizeStopped.is_type(upstream_event.type)
+                        ):
+                            break
+
+                    self.cache.set(normalized_text, voice, events_to_cache)
+                    return True
+            except Exception as e:
+                _LOGGER.warning(f"Upstream {uri} failed for streaming Synthesize: {e}")
+                UPSTREAM_FAILURES_TOTAL.labels(uri=uri).inc()
+
+        _LOGGER.error("All upstreams failed for streaming Synthesize.")
+        await self.write_event(Error(text="All upstream TTS services failed.").event())
+        await self.write_event(SynthesizeStopped().event())
+        return True
 
 
 # --- END OF FILE handler.py ---
