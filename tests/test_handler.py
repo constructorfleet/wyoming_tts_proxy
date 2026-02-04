@@ -334,4 +334,3 @@ async def test_handler_preserve_streaming_flag(
     # Check that the Info sent to client preserves the streaming flag
     # The write call should have the streaming flag set to True
     assert writer.write.called
-
