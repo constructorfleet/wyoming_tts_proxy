@@ -124,6 +124,12 @@ async def main() -> None:
         dest="log_level",
         help="Set log level to DEBUG",
     )
+    parser.add_argument(
+        "--stream-tts",
+        action="store_true",
+        default=os.getenv("STREAM_TTS", "false").lower() == "true",
+        help="Force streaming TTS output even for non-streaming input (env: STREAM_TTS)",
+    )
     args = parser.parse_args()
 
     config = load_config(args.config)

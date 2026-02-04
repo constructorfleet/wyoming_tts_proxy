@@ -30,7 +30,7 @@ jobs:
         run: ./scripts/test
 
       - name: Pytest coverage comment
-        uses: MishaKav/pytest-coverage-commentary@v1.1.60
+        uses: MishaKav/pytest-coverage-comment@main
         with:
           pytest-xml-coverage-path: ./coverage.xml
           title: Coverage Report

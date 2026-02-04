@@ -6,6 +6,7 @@ Many times, LLMs will include emoji or markdown in their response. This proxy al
 
 ### Features
 
+- **Streaming TTS Support**: Automatically detect streaming input and stream to upstream, or force streaming mode with `--stream-tts` flag.
 - **Upstream Failover**: Support multiple upstream TTS servers for high availability.
 - **Audio Caching**: Disk-based caching of synthesized audio with LRU pruning and size limits.
 - **Prometheus Metrics & Health**: Built-in exporter for metrics and a `/health` endpoint for Docker/Kubernetes.
@@ -44,6 +45,7 @@ cache_dir: /tmp/tts_cache  # Directory for cached audio
 max_cache_size_mb: 512     # Prune oldest files when limit reached
 structured_logging: true   # Output JSON logs
 ssml_template: "<speak>{{text}}</speak>" # Wrap text in SSML
+stream_tts: true           # Force streaming TTS output
 
 replacements:              # Custom regex replacements
   - regex: "LLM"
@@ -66,6 +68,7 @@ python3 -m wyoming_tts_proxy \
   --metrics-port 8000 \
   --structured-logging \
   --ssml-template "<speak>{{text}}</speak>" \
+  --stream-tts \
   --config config.yaml \
   --log-level DEBUG
 ```
@@ -78,6 +81,7 @@ python3 -m wyoming_tts_proxy \
 - `--metrics-port`: Port to export Prometheus metrics and health check (0 = disabled)
 - `--structured-logging`: Use JSON formatted logs
 - `--ssml-template`: Template to wrap normalized text in before synthesis
+- `--stream-tts`: Force streaming TTS output even for non-streaming input (env: `STREAM_TTS`)
 - `--config`: Path to YAML configuration file
 - `--log-level`: Logging level (`DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`; default: `INFO`)
 - `--debug`: Shortcut for `--log-level DEBUG`
@@ -92,6 +96,7 @@ python3 -m wyoming_tts_proxy \
 - `METRICS_PORT`: Port for Prometheus metrics and health check
 - `STRUCTURED_LOGGING`: Set to `true` for JSON logs
 - `SSML_TEMPLATE`: Template for SSML wrapping
+- `STREAM_TTS`: Set to `true` to force streaming TTS output
 - `CONFIG_FILE_PATH`: Path to the YAML configuration file
 - `LOG_LEVEL`: Logging level (default: `INFO`)
 

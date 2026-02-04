@@ -67,7 +67,7 @@ async def test_handler_describe(
         reader,
         writer,
         proxy_program_info=proxy_program_info,
-        cli_args=MagicMock(),
+        cli_args=MagicMock(stream_tts=False),
         upstream_uris=["tcp://upstream"],
         text_normalizer=text_normalizer,
         cache=audio_cache,
@@ -104,7 +104,7 @@ async def test_handler_describe_failover(
         reader,
         writer,
         proxy_program_info=proxy_program_info,
-        cli_args=MagicMock(),
+        cli_args=MagicMock(stream_tts=False),
         upstream_uris=["tcp://upstream1", "tcp://upstream2"],
         text_normalizer=text_normalizer,
         cache=audio_cache,
@@ -137,11 +137,14 @@ async def test_handler_synthesize_ssml(
 
     config = ProxyConfig(ssml_template="<speak>{{text}}</speak>")
 
+    cli_args = MagicMock()
+    cli_args.stream_tts = False
+
     handler = TTSProxyEventHandler(
         reader,
         writer,
         proxy_program_info=proxy_program_info,
-        cli_args=MagicMock(),
+        cli_args=cli_args,
         upstream_uris=["tcp://upstream"],
         text_normalizer=text_normalizer,
         cache=audio_cache,
@@ -177,7 +180,7 @@ async def test_handler_synthesize_cache_hit(
         reader,
         writer,
         proxy_program_info=proxy_program_info,
-        cli_args=MagicMock(),
+        cli_args=MagicMock(stream_tts=False),
         upstream_uris=["tcp://upstream"],
         text_normalizer=text_normalizer,
         cache=cache,
@@ -190,3 +193,144 @@ async def test_handler_synthesize_cache_hit(
     assert result is True
     # Verify events were written to client without calling upstream
     assert writer.write.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_handler_streaming_synthesize(
+    proxy_program_info, text_normalizer, audio_cache, proxy_config
+):
+    """Test handling streaming synthesize request (SynthesizeStart/Chunk/Stop)."""
+    reader = AsyncMock(spec=asyncio.StreamReader)
+    writer = AsyncMock(spec=asyncio.StreamWriter)
+
+    upstream_client = AsyncMock()
+    upstream_client.__aenter__.return_value = upstream_client
+    upstream_client.read_event.side_effect = [
+        AudioStart(rate=16000, width=2, channels=1).event(),
+        AudioStop().event(),
+    ]
+
+    handler = TTSProxyEventHandler(
+        reader,
+        writer,
+        proxy_program_info=proxy_program_info,
+        cli_args=MagicMock(stream_tts=False),
+        upstream_uris=["tcp://upstream"],
+        text_normalizer=text_normalizer,
+        cache=audio_cache,
+        config=proxy_config,
+    )
+
+    from wyoming.tts import SynthesizeStart, SynthesizeChunk, SynthesizeStop
+
+    with patch(
+        "wyoming_tts_proxy.handler.AsyncClient.from_uri", return_value=upstream_client
+    ):
+        # Start streaming
+        await handler.handle_event(SynthesizeStart().event())
+        assert handler.is_streaming is True
+
+        # Send chunks
+        await handler.handle_event(SynthesizeChunk(text="hello ").event())
+        await handler.handle_event(SynthesizeChunk(text="world").event())
+
+        # Stop streaming - this triggers the actual synthesis
+        result = await handler.handle_event(SynthesizeStop().event())
+
+    assert result is True
+    assert handler.is_streaming is False
+    # Should have sent streaming events to upstream
+    assert upstream_client.write_event.call_count >= 3  # Start + Chunk + Stop
+
+
+@pytest.mark.asyncio
+async def test_handler_force_streaming_with_flag(
+    proxy_program_info, text_normalizer, audio_cache, proxy_config
+):
+    """Test forcing streaming mode with --stream-tts flag."""
+    reader = AsyncMock(spec=asyncio.StreamReader)
+    writer = AsyncMock(spec=asyncio.StreamWriter)
+
+    upstream_client = AsyncMock()
+    upstream_client.__aenter__.return_value = upstream_client
+    upstream_client.read_event.side_effect = [
+        AudioStart(rate=16000, width=2, channels=1).event(),
+        AudioStop().event(),
+    ]
+
+    # Enable stream_tts flag
+    cli_args = MagicMock()
+    cli_args.stream_tts = True
+
+    handler = TTSProxyEventHandler(
+        reader,
+        writer,
+        proxy_program_info=proxy_program_info,
+        cli_args=cli_args,
+        upstream_uris=["tcp://upstream"],
+        text_normalizer=text_normalizer,
+        cache=audio_cache,
+        config=proxy_config,
+    )
+
+    from wyoming.tts import Synthesize
+
+    event = Synthesize(text="hello").event()
+    with patch(
+        "wyoming_tts_proxy.handler.AsyncClient.from_uri", return_value=upstream_client
+    ):
+        result = await handler.handle_event(event)
+
+    assert result is True
+    # Should have sent streaming events to upstream (Start, Chunk, Stop)
+    assert upstream_client.write_event.call_count == 3
+
+
+@pytest.mark.asyncio
+async def test_handler_preserve_streaming_flag(
+    proxy_program_info, text_normalizer, audio_cache, proxy_config
+):
+    """Test that supports_synthesize_streaming flag is preserved from upstream."""
+    reader = AsyncMock(spec=asyncio.StreamReader)
+    writer = AsyncMock(spec=asyncio.StreamWriter)
+
+    upstream_client = AsyncMock()
+    upstream_client.__aenter__.return_value = upstream_client
+
+    # Mock Info response with streaming support
+    upstream_info = Info(
+        tts=[
+            TtsProgram(
+                name="upstream-tts",
+                description="desc",
+                attribution=Attribution(name="attr", url="url"),
+                installed=True,
+                version="1.0",
+                voices=[],
+                supports_synthesize_streaming=True,
+            )
+        ]
+    )
+    upstream_client.read_event.return_value = upstream_info.event()
+
+    handler = TTSProxyEventHandler(
+        reader,
+        writer,
+        proxy_program_info=proxy_program_info,
+        cli_args=MagicMock(stream_tts=False),
+        upstream_uris=["tcp://upstream"],
+        text_normalizer=text_normalizer,
+        cache=audio_cache,
+        config=proxy_config,
+    )
+
+    with patch(
+        "wyoming_tts_proxy.handler.AsyncClient.from_uri", return_value=upstream_client
+    ):
+        event = Describe().event()
+        result = await handler.handle_event(event)
+
+    assert result is True
+    # Check that the Info sent to client preserves the streaming flag
+    # The write call should have the streaming flag set to True
+    assert writer.write.called

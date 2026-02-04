@@ -54,3 +54,7 @@ class ProxyConfig(BaseModel):
     replacements: List[ReplacementConfig] = Field(
         default_factory=list, description="List of custom regex replacements"
     )
+    stream_tts: bool = Field(
+        default=False,
+        description="Force streaming TTS output even for non-streaming input",
+    )
