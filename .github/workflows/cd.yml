@@ -92,9 +92,8 @@ jobs:
           git add pyproject.toml uv.lock
           git commit -m "chore: release v${VERSION}"
           echo "sha=$(git rev-parse HEAD)" >> "${GITHUB_OUTPUT}"
-          git tag "v${VERSION}"
-          git push origin HEAD:main
-          git push origin "v${VERSION}"
+          git tag -a "v${VERSION}" -m "v${VERSION}"
+          git push origin HEAD:main --follow-tags
           gh release create "v${VERSION}" \
             --title "v${VERSION}" \
             --generate-notes
