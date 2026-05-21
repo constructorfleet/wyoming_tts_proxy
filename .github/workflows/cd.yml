@@ -39,21 +39,29 @@ jobs:
 
           pyproject_path = Path("pyproject.toml")
           content = pyproject_path.read_text(encoding="utf-8")
-          project_name = tomllib.loads(content)["project"]["name"]
+          project = tomllib.loads(content)["project"]
+          project_name = project["name"]
+          current_version = project["version"]
           match = re.search(
-              r'^\s*version = "(\d+)\.(\d+)\.(\d+)"\s*$',
-              content,
-              re.MULTILINE,
+              r"^(\d+)\.(\d+)\.(\d+)(?:\.\d+)*$",
+              current_version,
           )
           if match is None:
               raise SystemExit("Unable to find semantic version in pyproject.toml")
 
           major, minor, patch = map(int, match.groups())
           new_version = f"{major}.{minor}.{patch + 1}"
+          version_line_match = re.search(
+              rf'^(\s*version\s*=\s*"){re.escape(current_version)}("\s*)$',
+              content,
+              re.MULTILINE,
+          )
+          if version_line_match is None:
+              raise SystemExit("Unable to locate version line in pyproject.toml")
           pyproject_path.write_text(
-              content[: match.start(1)]
+              content[: version_line_match.end(1)]
               + new_version
-              + content[match.end(1) :],
+              + content[version_line_match.start(2) :],
               encoding="utf-8",
           )
 
