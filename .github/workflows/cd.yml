@@ -34,10 +34,12 @@ jobs:
         run: |
           VERSION="$(python <<'PY'
           import re
+          import tomllib
           from pathlib import Path
 
           pyproject_path = Path("pyproject.toml")
           content = pyproject_path.read_text(encoding="utf-8")
+          project_name = tomllib.loads(content)["project"]["name"]
           match = re.search(
               r'^\s*version = "(\d+)\.(\d+)\.(\d+)"\s*$',
               content,
@@ -58,7 +60,7 @@ jobs:
           uv_lock_path = Path("uv.lock")
           uv_lock_content = uv_lock_path.read_text(encoding="utf-8")
           uv_lock_match = re.search(
-              r'(?ms)(\[\[package\]\]\s+name = "wyoming-tts-proxy"\s+version = ")(\d+\.\d+\.\d+)(")',
+              rf'(?ms)(\[\[package\]\]\s+name = "{re.escape(project_name)}"\s+version = ")(\d+\.\d+\.\d+)(")',
               uv_lock_content,
           )
           if uv_lock_match is None:
@@ -80,7 +82,7 @@ jobs:
           } >> "${GITHUB_OUTPUT}"
 
           git add pyproject.toml uv.lock
-          git commit -m "chore: release v${VERSION} [skip ci]"
+          git commit -m "chore: release v${VERSION}"
           echo "sha=$(git rev-parse HEAD)" >> "${GITHUB_OUTPUT}"
           git tag "v${VERSION}"
           git push origin HEAD:main --follow-tags
