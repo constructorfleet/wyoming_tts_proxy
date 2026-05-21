@@ -32,7 +32,7 @@ _LOGGER = logging.getLogger(__name__)
 try:
     PROXY_PROGRAM_VERSION = version("wyoming-tts-proxy")
 except PackageNotFoundError:
-    PROXY_PROGRAM_VERSION = "0.0.0"
+    PROXY_PROGRAM_VERSION = "0.0.0-dev"
 
 
 class JsonFormatter(logging.Formatter):

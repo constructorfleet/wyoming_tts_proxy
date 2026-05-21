@@ -16,6 +16,7 @@ jobs:
     outputs:
       version: ${{ steps.release.outputs.version }}
       tag: ${{ steps.release.outputs.tag }}
+      sha: ${{ steps.release.outputs.sha }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -37,7 +38,11 @@ jobs:
 
           pyproject_path = Path("pyproject.toml")
           content = pyproject_path.read_text(encoding="utf-8")
-          match = re.search(r'^version = "(\d+)\.(\d+)\.(\d+)"$', content, re.MULTILINE)
+          match = re.search(
+              r'^\s*version = "(\d+)\.(\d+)\.(\d+)"\s*$',
+              content,
+              re.MULTILINE,
+          )
           if match is None:
               raise SystemExit("Unable to find semantic version in pyproject.toml")
 
@@ -53,9 +58,8 @@ jobs:
           uv_lock_path = Path("uv.lock")
           uv_lock_content = uv_lock_path.read_text(encoding="utf-8")
           uv_lock_match = re.search(
-              r'(\[\[package\]\]\nname = "wyoming-tts-proxy"\nversion = ")(\d+\.\d+\.\d+)(")',
+              r'(?ms)(\[\[package\]\]\s+name = "wyoming-tts-proxy"\s+version = ")(\d+\.\d+\.\d+)(")',
               uv_lock_content,
-              re.MULTILINE,
           )
           if uv_lock_match is None:
               raise SystemExit("Unable to find project version in uv.lock")
@@ -77,6 +81,7 @@ jobs:
 
           git add pyproject.toml uv.lock
           git commit -m "chore: release v${VERSION} [skip ci]"
+          echo "sha=$(git rev-parse HEAD)" >> "${GITHUB_OUTPUT}"
           git tag "v${VERSION}"
           git push origin HEAD:main --follow-tags
           gh release create "v${VERSION}" \
@@ -92,7 +97,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ needs.release.tag }}
+          ref: ${{ needs.release.outputs.sha }}
           fetch-depth: 0
 
       - name: Install uv
