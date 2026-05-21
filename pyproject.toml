@@ -1,6 +1,6 @@
 [project]
 name = "wyoming-tts-proxy"
-version = "1.0.2"
+version = "1.0.3.0.2"
 description = "Transparently normalize text and proxy requests to text-to-speech Wyoming services."
 readme = "README.md"
 requires-python = ">=3.13.1"
