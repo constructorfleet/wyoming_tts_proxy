@@ -141,7 +141,7 @@ If you change the TTS engine, you might need to reload the Home Assistant integr
 
 This project uses `uv` for dependency management. GitHub Actions are configured to run linting, formatting, and tests on every Pull Request. Pull Request coverage is reported as a comment.
 
-On push to the `main` branch, the project is automatically checked, and a Docker image is built and published to the GitHub Container Registry (GHCR).
+On push to the `main` branch, the project automatically bumps the patch version, creates a git tag, publishes a GitHub release, and then runs CD to build and publish the Docker image to the GitHub Container Registry (GHCR).
 
 ```bash
 # Register venv and install dependencies
