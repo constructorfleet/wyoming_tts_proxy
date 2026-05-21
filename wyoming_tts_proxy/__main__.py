@@ -5,6 +5,7 @@ import logging
 import sys
 import yaml
 import json
+from importlib.metadata import PackageNotFoundError, version
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -23,11 +24,15 @@ from .metrics import start_metrics_server
 
 PROXY_PROGRAM_NAME = "tts-proxy"
 PROXY_PROGRAM_DESCRIPTION = "Wyoming TTS proxy with text normalization"
-PROXY_PROGRAM_VERSION = "0.1.0"
 PROXY_ATTRIBUTION_NAME = "My TTS Proxy"
 PROXY_ATTRIBUTION_URL = "https://github.com/mitrokun/wyoming_tts_proxy"
 
 _LOGGER = logging.getLogger(__name__)
+
+try:
+    PROXY_PROGRAM_VERSION = version("wyoming-tts-proxy")
+except PackageNotFoundError:
+    PROXY_PROGRAM_VERSION = "0.0.0-dev"
 
 
 class JsonFormatter(logging.Formatter):
