@@ -339,7 +339,7 @@ wheels = [
 
 [[package]]
 name = "wyoming-tts-proxy"
-version = "1.0.2"
+version = "1.0.3"
 source = { virtual = "." }
 dependencies = [
     { name = "emoji" },
