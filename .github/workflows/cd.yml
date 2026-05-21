@@ -49,6 +49,23 @@ jobs:
               + content[match.end(1) :],
               encoding="utf-8",
           )
+
+          uv_lock_path = Path("uv.lock")
+          uv_lock_content = uv_lock_path.read_text(encoding="utf-8")
+          uv_lock_match = re.search(
+              r'(\[\[package\]\]\nname = "wyoming-tts-proxy"\nversion = ")(\d+\.\d+\.\d+)(")',
+              uv_lock_content,
+              re.MULTILINE,
+          )
+          if uv_lock_match is None:
+              raise SystemExit("Unable to find project version in uv.lock")
+
+          uv_lock_path.write_text(
+              uv_lock_content[: uv_lock_match.start(2)]
+              + new_version
+              + uv_lock_content[uv_lock_match.end(2) :],
+              encoding="utf-8",
+          )
           print(new_version, end="")
           PY
           )"
@@ -58,7 +75,7 @@ jobs:
             echo "tag=v${VERSION}"
           } >> "${GITHUB_OUTPUT}"
 
-          git add pyproject.toml
+          git add pyproject.toml uv.lock
           git commit -m "chore: release v${VERSION} [skip ci]"
           git tag "v${VERSION}"
           git push origin HEAD:main --follow-tags
